@@ -1,0 +1,220 @@
+#######################       LOAD PACKAGES        ################################# 
+# to run MCMC
+library( nimble )
+
+#######################       READ IN DATA         ################################# 
+# Use either y_obs_ghow.csv or y_obs_barn.csv depending on owl species
+y_obs <- read.csv( "y_obs_ghow.csv" )
+# Use either y_aru_ghow.csv or y_aru_barn.csv depending on owl species
+y_aru <- read.csv( "y_aru_ghow.csv" )
+# Scaled habitat predictors
+X <- read.csv( "X.csv" ) 
+# Names of habitat categories
+habnames <- c( "crop","grass","shrub","aquatic","high" )
+# Scaled detection predictors for ARU submodel
+wind_sc_aru < read.csv( "wind_sc_aru.csv" )
+moon_sc_aru <-read.csv( "moon_sc_aru.csv" )
+temp_sc_aru, paste( "temp_sc_aru.csv" )
+jday_sc_aru, paste( "jday_sc_aru.csv" )
+# Scaled predictors for callback submodel
+cloud_sc read.csv( "cloud_sc.csv" )
+jday_sc read.csv( "jday_sc.csv" )
+moon_sc <- read.csv( "moon_sc.csv" )
+temp_sc <- read.csv( "temp_sc.csv" )
+sunm_sc <- read.csv( "sunm_sc.csv" )
+
+#######################      DEFINE CONSTANTS      ################################# 
+# number of psi predictors
+B <- 5
+# number of detection predictors in ARU submodel
+A1 <- 3
+# number of detection predictors in callback submodel
+A2 <- 5
+# number sitesXyear
+I <- 124
+# number of nights in ARU submodel
+J1 <- 42
+# number of nights in callback submodel
+J2 <- 3
+
+#######################       NIMBLE MODEL      ##################################
+#### Model code
+code <- nimbleCode({
+  # Priors for top-level variables
+  # Overall occupancy
+  for( k in 1:2 ) {
+    int.psi[ k ] <- log( mean.psi[ k ] / ( 1 - mean.psi[ k ] ) )
+    mean.psi[ k ] ~ dbeta( 4, 4 ) #mean occupancy prob
+  }
+  # Detection for ARUs
+  int.theta <- log( mean.theta / ( 1 - mean.theta ) )
+  mean.theta ~ dbeta( 4, 4 )  #mean detection prob
+  # Detection for callbacks
+  int.p <- log( mean.p / ( 1 - mean.p ) )
+  mean.p ~ dbeta( 4, 4 )  #mean detection prob
+  # Overall occupancy coefficient
+  for( b in 1:B ){
+    beta.psi[ b ] ~ dnorm( 0, 0.2 ) # precision = 1/sd^2
+  }
+  # random site intercept (remove this if running barn owl model with no random intercept)
+  for ( i in 1:I ){  #
+    
+    #random site intercept for ecological model truncated
+    # on the logit scale to range only between -7 to 7
+    # this speeds up computation
+    
+    eps.i[ i ] ~ T( dnorm( 0, prec.i), -7, 7 )
+    
+  } #i
+  #error terms for random effects:
+  #associated precision of random intercepts for detection #
+  # is estimated by 1/variance
+  #instead of setting the prior to link to a precision estimate #
+  # we set it to link to the standard deviation (sigma) which in
+  # this case is drawn from a student-t distribution truncated to
+  # start at zero since error terms can only be positive
+  prec.i <- 1 / ( sigma.i * sigma.i )
+  sigma.i ~ T( dt( 0, 2.5, 7 ), 0, Inf )
+  
+  # ARU detection coefficient
+  for( a in 1: A1 ){
+    alpha[ a ] ~ dnorm( 0, 0.2 )
+  }
+  # Callback detection coefficient
+  for( a in 1: A2 ){
+    alpha.p[ a ] ~ dnorm( 0, 0.2 )
+  }
+  
+  # Occupancy and call rate models
+  # Both detection techniques contribute to z, psi, and betas
+  # start looping through sitesXyear
+  for( i in 1:I ) {
+    z[ i ] ~ dbern( psi[ i ])
+    logit( psi[ i ] ) <- int.psi[ year[ i ] ] + #year effect
+      beta.psi[ 1 ] * X[ i, 1 ] + #crop
+      beta.psi[ 2 ] * X[ i, 2 ] + #grass
+      beta.psi[ 3 ] * X[ i, 3 ] + #shrub
+      beta.psi[ 4 ] * X[ i, 4 ] + #aquatic
+      beta.psi[ 5 ] * X[ i, 5 ]  #high lidar
+    
+    # ARU Detection
+    for( j in 1:J1 ) {
+      # we link probability of detection, p, to predictors
+      # using a logit function
+      y_aru[ i,j ] ~ dbern( z[ i ] * theta[ i,j ] )
+      
+      logit( theta[ i,j ] ) <- int.theta + eps.i[ i ] + # remove random effect for site if running barn owl model
+        # fixed predictors
+        alpha[ 1 ] * wind_sc_aru[ j ] + # wind speed
+        alpha[ 2 ] * moon_sc_aru[ j ] + # moon mean illumination
+        alpha[ 3 ] * temp_sc_aru[ j ] + # temp in degrees C
+        alpha[ 4 ] * jday_sc_aru[ j ] # jday
+      
+      # Estimate what the model would have produced as observations (for model eval)
+      yhat_aru[ i,j ] ~dbern( z[ i ] * theta[ i,j ] )
+      
+      # Estimate likelihood of observed and predicted values
+      lik_yaru[ i,j ] <- ( ( psi[ i ] * theta[ i,j ] )^y_aru[ i,j ] ) *
+        ( ( 1 - psi[ i ] * theta[ i,j ] )^( 1 - y_aru[ i,j ] ) )
+      
+      # Likelihood of estimated detections
+      lik_yhat_aru[ i,j ] <- ( ( psi[ i ]* theta[ i,j ] )^yhat_aru[ i,j ] ) *
+        ( ( 1 - psi[ i ] * theta[ i,j ] )^( 1 - yhat_aru[ i,j ] ) )
+      
+    } # close J1 loop
+    
+    # Callback Detection
+    for( j in 1:J2 ){ #loop over surveys each year
+      # we link probability of detection, p, to predictors
+      # using a logit function
+      y_obs[ i,j ] ~ dbern( z[ i ] * p[ i, j ] )
+      
+      logit( p[ i, j ] ) <- int.p +
+        #fixed predictors
+        alpha.p[ 1 ] * cloud_sc[ i, j ] + #cloud cover
+        alpha.p[ 2 ] * jday_sc[ i, j ] + #day of year
+        alpha.p[ 3 ] * moon_sc[ i, j ] + #moon mean illumination
+        alpha.p[ 4 ] * temp_sc[ i, j ] + #temp in degrees C
+        alpha.p[ 5 ] * sunm_sc[ i, j ] #time after sunset in min
+      
+      # Estimate what the model would have produced as observations (for model eval)
+      yhat[ i,j ] ~dbern( z[ i ] * p[ i,j ] )
+      
+      # Estimate likelihood of observed and predicted values
+      lik_yobs[ i,j ] <- ( ( psi[ i ] * p[ i,j ] )^y_obs[ i,j ] ) *
+        ( ( 1 - psi[ i ] * p[ i,j ] )^( 1 - y_obs[ i,j ] ) )
+      
+      # Likelihood of estimated detections
+      lik_yhat[ i,j ] <- ( ( psi[ i ]* p[ i,j ] )^yhat[ i,j ] ) *
+        ( ( 1 - psi[ i ] * p[ i,j ] )^( 1 - yhat[ i,j ] ) )
+      
+    } #close J2
+    
+  } # Close I loop
+  
+}) # model close
+
+#######################    CONSTANTS LIST    ####################################
+constants <- list(
+  I = I,
+  J1 = J1,
+  J2 = J2,
+  year = X$year,
+  A1 = A1,
+  A2 = A2,
+  B = B # double check
+)
+
+#######################     DATA LIST    ########################################
+data <- list(
+  y_aru = as.matrix( y_aru ), # binary ARU confidence scores
+  X = as.matrix( X[,habnames] ), # habitat types
+  wind_sc_aru = as.vector( wind_sc_aru ),
+  moon_sc_aru = as.vector( moon_sc_aru ),
+  temp_sc_aru = as.vector( temp_sc_aru ),
+  jday_sc_aru = as.vector( jday_sc_aru ),
+  y_obs = as.matrix( y_obs ),  # callback surveys
+  cloud_sc = as.matrix( cloud_sc ),
+  jday_sc = as.matrix( jday_sc ),
+  moon_sc = as.matrix( moon_sc ),
+  temp_sc = as.matrix( temp_sc ),
+  sunm_sc = as.matrix( sunm_sc )
+)
+
+#######################      INITIAL VALUES LIST     ###############################
+inits <- list(
+  beta.psi = rnorm( B ),
+  alpha = rnorm( A1 ),
+  alpha.p = rnorm( A2 ),
+  z = z_inits
+)
+
+#######################     RUN NIMBLE MODEL   ##################################
+Rmodel <- nimbleModel( code = code, constants = constants, data = data, 
+                       inits = inits )
+Rmodel$calculate()
+Rmodel$initializeInfo()
+# Build, compile, and run MCMC
+conf <- configureMCMC( Rmodel, enableWAIC = TRUE, monitors = c( 
+  "alpha[1]", "alpha[2]", "alpha[3]", "alpha[4]", "int.theta", "int.p", "int.psi",
+  "beta.psi[1]", "beta.psi[2]", "beta.psi[3]", "beta.psi[4]", "beta.psi[5]",
+  "alpha.p[1]", "alpha.p[2]", "alpha.p[3]", "alpha.p[4]", "alpha.p[5]",
+  "psi", "theta", "sigma.i", "eps.i", "p", "z", "yhat", "lik_yobs", "lik_yhat",
+  "yhat_aru", "lik_yaru", "lik_yhat_aru" ))
+# Compile NIMBLE model into C for speed
+Rmcmc <- buildMCMC( conf, monitors = c( 
+  "alpha[1]", "alpha[2]", "alpha[3]", "alpha[4]", "int.theta", "int.p", "int.psi",
+  "beta.psi[1]", "beta.psi[2]", "beta.psi[3]", "beta.psi[4]", "beta.psi[5]",
+  "alpha.p[1]", "alpha.p[2]", "alpha.p[3]", "alpha.p[4]", "alpha.p[5]",
+  "psi", "theta", "sigma.i", "eps.i", "p", "z", "yhat", "lik_yobs", "lik_yhat",
+  "yhat_aru", "lik_yaru", "lik_yhat_aru"  ))
+
+Cmodel <- compileNimble( Rmodel, showCompilerOutput = FALSE )
+Cmcmc <- compileNimble( Rmcmc, project = Rmodel, showCompilerOutput = FALSE )
+
+set.seed( 0 ) # Makes MCMC results replicable
+
+# Define mcmc settings and run model
+nt <- 10; nb <- 100000; nc <- 5 # thinning, burnin, chains
+
+m_results <- runMCMC( Cmcmc, niter = 400000, nburnin = nb, thin = nt, nchains = nc, samples = TRUE, summary = TRUE, WAIC = TRUE )
