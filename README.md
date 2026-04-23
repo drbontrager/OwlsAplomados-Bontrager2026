@@ -4,5 +4,5 @@ This repository contains the code and data for the analysis in Bontrager et al. 
 
 1. MultimethodOccupancyCode - used to estimate Great Horned Owl and Barn Owl occupancy using NIMBLE.
 2. OwlData - data for MultmethodOccupancyCode
-3. IntegratedPopulationModelCode - used to estimate Aplomado Falcon nest occupancy and productivty with JAGS.
+3. IntegratedPopulationModelCode - used to estimate Aplomado Falcon nest occupancy and productivity with JAGS.
 4. AplomadoData - data for IntegratedPopulationModelCode
