@@ -1,0 +1,304 @@
+########################          LOAD PACKAGES           ######################
+library( jagsUI )
+library( tidyverse )
+
+########################          READ IN DATA            ######################
+# Occupancy Data
+raw_occ <- read.csv( "aplomado_occupancy.csv")
+
+# Survival Data
+survival <- read.csv( "aplomado_survival.csv" )
+
+# Habitat Data
+raw_hab <- read.csv( "habitat_productivity.csv" )
+
+#####################         HABITAT DATA PREP       ##########################
+head( raw_hab )
+
+# Create vector of habitat names to include in the model
+habnames <- c( "AH", "ghow_occ", "barn_occ" ) # change as needed
+habdf <- raw_hab %>% 
+  arrange( siteid ) %>% 
+  dplyr::select( Territory, siteid, all_of( habnames ))
+
+head( habdf )
+#create standardise dataframe
+X <- habdf
+#standardise
+X[, habnames ] <- apply( X[, habnames ], MARGIN = 2, FUN = scale )
+
+head(X); dim(X)
+
+####################      OCCUPANCY DATA PREP    ##############################
+# Now add habitat covariates to the detection dataframe
+head( raw_occ )
+det_df <- raw_occ %>%
+  select( Year, yearid, Territory, siteid, jday_away_sc, Occupied )
+
+head( det_df )
+
+########################    CREATE MODEL CONSTANTS    ##########################
+I <- length( unique( det_df$siteid )) #number of sites
+
+K <- length( unique( det_df$yearid )) #number of years
+
+T <- nrow( det_df ) # total number of rows in long format dataframe
+
+N <- nrow( survival ) # total number of nestlings
+
+#######################     DEFINE MCMC SETTINGS      ##########################
+
+nt <- 10; nb <- 20000; nc <- 5 #thinning, burnin, chains
+
+#################     SPECIFY MODEL IN BUGS LANGUAGE     ######################
+sink( "m1.txt" )
+cat( "
+     model{
+      #occupancy first
+      #priors
+      #define intercept for occupancy
+      # note that this is using the logit transformation #
+      # do you recognise it?
+      # it allows us to set the prior on the real scale #
+      # where the intercept represent the mean probability averaged
+      # across sites and years...here we use a beta distribution
+      # which ranges between 0 to 1, the parameters given to this prior
+      # should result in a tight, bell-shaped distribution centered around
+      # 0.5 - plot different distributions to see what they look like
+      
+      for( k in 1:3 ){ #loop over years 
+        int.psi[ k ] <- log( mean.psi[ k ] / ( 1 - mean.psi[ k ] ) )
+        mean.psi[ k ] ~ dbeta( 4, 4 )  #mean occupancy probability
+      }
+        #This same process is used to assign our prior for the detection intercept
+        
+        int.p <- log( mean.p / ( 1 - mean.p ) )
+        mean.p ~ dbeta( 4, 4 )  #mean detection prob
+        
+      #random site intercepts in occupancy model
+
+      for ( i in 1:I ){  #
+        #random site intercept for ecological model truncated
+        # on the logit scale to range only between -7 to 7
+        # this speeds up computation
+
+        #ecological model
+        eps.i[ i ] ~ dnorm( 0, prec.i ) T(-7, 7)
+        #observation model
+        eps.p[ i ] ~ dnorm( 0, prec.p ) T(-7, 7)
+
+      } #i
+      #error terms for random effects:
+      #associated precision of random intercepts for detection #
+      # is estimated by 1/variance
+
+      #ecological model
+      prec.i <- 1 / ( sigma.i * sigma.i )
+      #observation model
+      prec.p <- 1 / ( sigma.p * sigma.p )
+
+      #instead of setting the prior to link to a precision estimate #
+      # we set it to link to the standard deviation (sigma) which in
+      # this case is drawn from a student-t distribution truncated to
+      # start at zero since error terms can only be positive
+
+      #ecological model
+      sigma.i ~ dt( 0, 2.5, 7 ) T( 0, )
+      #ecological model
+      sigma.p ~ dt( 0, 2.5, 7 ) T( 0, )
+      
+      #priors for fixed coefficients in occupancy ecological model:
+      
+      for( q in 1:3 ){ #loop over number of predictors
+        beta.psi[ q ] ~ dnorm( 0, 0.1 )      #this precision is not fully uninformative but actually
+                                             #regularizes the estimates around 0 to help computation
+      }
+      #priors for fixed coefficients in detection submodel:
+     
+      for( q in 1:1 ){ #loop over number of predictors
+        alpha.p[ q ] ~ dnorm( 0, 0.1 ) #prior for detection predictors
+      } #Q
+      
+      #Now survival
+      #define intercept for nestling survival
+      
+      for( k in 1:3 ){ #loop over years
+        int.surv[ k ] <- log( mean.surv[ k ] / ( 1 - mean.surv[ k ] ) )
+        mean.surv[ k ] ~ dbeta( 4, 4 ) #mean survival probability
+        
+      } #K
+      
+      #random site intercept in survival model
+
+      for ( i in 1:I ){  #
+        #random site intercept for ecological model truncated
+        # on the logit scale to range only between -7 to 7
+        # this speeds up computation
+
+        eps.s[ i ] ~ dnorm( 0, prec.s ) T(-7, 7)
+      } #i
+      #error terms for random effects:
+      #associated precision of random intercepts for detection #
+      # is estimated by 1/variance
+
+      prec.s <- 1 / ( sigma.s * sigma.s )
+      
+      #instead of setting the prior to link to a precision estimate #
+      # we set it to link to the standard deviation (sigma) which in
+      # this case is drawn from a student-t distribution truncated to
+      # start at zero since error terms can only be positive
+
+      sigma.s ~ dt( 0, 2.5, 7 ) T( 0, )
+
+      #priors for fixed coefficients in survival ecological model
+
+      for( q in 1:2 ){ #loop over number of predictors
+        lambda.surv[ q ] ~ dnorm( 0, 0.1 )
+      } #Q
+      
+      #Now that we have defined our priors we are ready to define
+      # the ecological model for occupancy with nestling survival conditional on occupancy:
+        
+        for( i in 1:I ){  #loop over sites
+          for( k in 1:K ){ #loop over years
+            #true occupancy state, z, is given a bernoulli distribution
+            # with probability psi:
+            
+            z[ i, k ] ~ dbern( psi[ i, k ] )
+              #probability of occupancy, psi is linked to predictors
+              # using a logit function:
+              
+              logit( psi[ i, k ] ) <- int.psi[ k ] +
+                  
+                  #random site intercept
+                  eps.i[ i ] +
+                  
+                  #fixed effects:
+                  beta.psi[ 1 ] * X[ i, 1 ] +  #aplomado habitat cover
+                  beta.psi[ 2 ] * X[ i, 2 ] +  #ghow occ. prob.
+                  beta.psi[ 3 ] * X[ i, 3 ]    #barn owl occ. prob.
+          } #K years
+        } #I sites
+      #Now we define the occ. observation model. Note that here we
+      # loop through T instead of K, T is the number of rows on our
+      # longformat dataframe which captures the total number of
+      # replicates X sites X years that we sampled over:
+      
+      for( t in 1:T ){  #loop over all replicates
+        # we link probability of detection, p, to predictors
+        # using a logit function
+        
+        logit( p[ t ] ) <- int.p +
+            
+            #random site intercept
+            eps.p[ siteid_occ[t] ] +
+            
+            #fixed predictors
+            alpha.p[ 1 ] * jday_away_sc_occ[ t ]    # number of days away from peak hatch
+            
+        #Here we link our observations to the estimated, true occupancy, z,
+        # from our ecological model above
+        y_obs[ t ] ~ dbern( z[ siteid_occ[ t ], yearid_occ[ t ] ] * p[ t ] )
+        
+        # REMOVE THIS FOR NOW
+        #here we estimate  what the model would have produced as observations
+        # we do this for model evaluation later
+        yhat[ t ] ~ dbern( z[ siteid_occ[ t ], yearid_occ[ t ] ] * p[ t ] )
+
+        #to finish, we also estimate the likelihood of observed and predicted
+        # values. You won't see this on sample code, but here we use it
+        # for model validation later
+        # Bernoulli likelihood of observations
+
+        lik_yobs[ t ] <- ( ( psi[ siteid_occ[ t ], yearid_occ[ t ] ] * p[ t ] )^y_obs[ t ] ) *
+              ( ( 1 - psi[ siteid_occ[ t ], yearid_occ[ t ] ] * p[ t ] )^( 1 - y_obs[ t ] ) )
+        # likelihood of estimated detections:
+
+        lik_yhat[ t ] <- ( ( psi[ siteid_occ[ t ], yearid_occ[ t ] ]* p[ t ] )^yhat[ t ] ) *
+            ( ( 1 - psi[ siteid_occ[t], yearid_occ[t] ] * p[ t ] )^( 1 - yhat[ t ] ) )
+      } #t
+      
+      #survival is a Bernoulli process conditional on occupancy
+      
+      for( n in 1:N ){
+        # survival, s_obs, is given a Bernoulli distribution conditional on occupancy, z, and prob. of survival, phi
+        
+        s_obs[ n ] ~ dbern( z[ siteid_surv[ n ], yearid_surv[ n ]] * phi[ n ] ) #if z is 0, there will not be nestlings
+            # link productivity to predictors
+                  
+                  logit( phi[ n ] ) <- int.surv[ yearid_surv[ n ] ] + 
+                    
+                    #random site intercept
+                    eps.s[ siteid_surv[ n ] ] +
+                    
+                    #fixed effects
+                    lambda.surv[ 1 ] * X[ siteid_surv[ n ], 2 ] + #ghow occ. prob.
+                    lambda.surv[ 2 ] * X[ siteid_surv[ n ], 3 ]   #barn occ. prob.
+                    #lambda.surv[ 3 ] * jday_away_sc_surv[ n ]   #number of days away from peak hatch date
+                    
+      } # N nestlings
+                  
+     } #model close
+     ", fill = TRUE )
+sink()
+
+####################      END OF MODEL SPECIFICATION      ######################
+modelname <- "m1.txt"
+#parameters monitored #only keep those relevant for model comparisons
+params <- c( 'int.psi' #intercept for occupancy model
+             , 'int.p' #intercept for detection
+             , 'beta.psi' #fixed coefficients for occupancy
+             , 'alpha.p' #fixed coefficients for detection
+             ,'z' #estimated occupancy state
+             ,'psi' #probability of occupancy
+             ,'p' #probability of detection
+             , 'lik_yobs' #likelihood for each occupancy observation
+             , 'lik_yhat' #likelihood for occupancy observations predicted by the model
+             , 'yhat' #estimated occurrence from model
+             , 'lambda.surv' #fixed coefficients for nestling survival
+             , 'int.surv' #intercept for nestling survival
+             , 'phi' #probability of nestling survival
+             , 'mean.surv' #mean nestling survival probability
+             , 'mean.psi' #mean occupancy probability
+             , 'mean.p' #mean detection probability
+             , 'eps.i' #random site intercepts for occupancy ecological model
+             , 'sigma.i' #standard deviation of random site intercepts for occupancy ecological model
+             , 'eps.p' #random site intercepts for occupancy observation model
+             , 'sigma.p' #standard deviation of random site intercepts for occupancy observation model
+             , 'eps.s' #random site intercepts for nestling survival ecological model
+             , 'sigma.s' #standard deviation of random site intercepts for nestling survival ecological model
+)
+#create initial values for the model coefficients
+zst <- matrix( data = 1, nrow = I, ncol = K )
+#pst <- array(data = 1, dim = c(I,K,J) )
+#create initial values to start the algorithm
+inits <- function(){ list( beta.psi = rnorm( 3 ), # adjust these based on number of predictors
+                           alpha.p = rnorm( 1 ), 
+                           z = zst,
+                           lambda.surv = rnorm( 2 )
+) }
+#combine data into object:
+str( win.data <- list( ## Occupancy and detection ##
+                       y_obs = det_df$Occupied, #observed occupancy for each species
+                       K = K , I = I, T = T
+                       #site level predictors
+                       ,X = as.matrix( X[ ,habnames ])
+                       #survey level predictors
+                       ,siteid_occ = det_df$siteid
+                       ,yearid_occ = det_df$yearid
+                       ,jday_away_sc_occ = det_df$jday_away_sc
+                       ## Survival ##
+                       ,N = N # number of nestlings
+                       ,s_obs = survival$Survival # survival of nestlings
+                       #,jday_away_sc_surv = survival$jday_away_sc # number of days away from peak hatch date
+                       ,siteid_surv = survival$siteid # site id for nestlings
+                       ,yearid_surv = survival$yearid # year id for nestlings
+) )
+#call JAGS and summarize posteriors:
+m.results <-  autojags( win.data, inits = inits, params, modelname, #
+                  n.chains = nc, n.thin = nt, n.burnin = 0,
+                  iter.increment = 20000, max.iter = 500000,
+                  Rhat.limit = 1.1, # try 1.1 for initial runs
+                  save.all.iter = FALSE, parallel = TRUE )
+
+##########################          END OF SCRIPT          #####################
