@@ -4,7 +4,7 @@ This repository contains the code and data for the analysis in Bontrager, D.R., 
 
 Files are as follows:
 
-1. MultimethodOccupancyCode.txt - used to estimate Great Horned Owl and Barn Owl occupancy using NIMBLE.
+1. MultimethodOccupancyModelCode.txt - used to estimate Great Horned Owl and Barn Owl occupancy using NIMBLE.
 2. OwlData.Rda - data/workspace for MultmethodOccupancyCode
 3. HierarchicalReproductionModelCode.txt - used to estimate Aplomado Falcon nest occupancy and nestling survival using JAGS.
 4. AplomadoData.Rda - data/workspace for HierarchicalReproductionModelCode
