@@ -4,11 +4,15 @@ This repository contains the code and data for the analysis in Bontrager, D.R., 
 
 Files are as follows:
 
-1. MultimethodOccupancyModelCode.txt - used to estimate Great Horned Owl and Barn Owl occupancy using NIMBLE.
-2. OwlData.Rda - data/workspace to run occupancy models in MultmethodOccupancyCode
-3. HierarchicalReproductionModelCode.txt - used to estimate Aplomado Falcon nest occupancy and nestling survival using JAGS.
-4. AplomadoData.Rda - data/workspace to run models in HierarchicalReproductionModelCode
+OwlData Folder: contains data/workspaces for the owl occupancy models
+              - BarnOwlData.RData - load workspace to run the model in BarnOwlOccupancyModelCode.txt
+              - GreatHornedOwlData.RData - load workspace to run the model in GreatHornedOwlOccupancyModelCode.txt
+BarnOwlOccupancyModelCode.txt - used to estimate Barn Owl occupancy using NIMBLE.
+GreatHornedOwlOccupancyModelCode.txt - used to estimate Great Horned Owl occupancy using NIMBLE.
 
-Detailed model descriptions and formulas are describe in the manuscript. Raw data are in ScholarWorks repository: (doi)
+AplomadoData Folder: contains AplomadoData.RData workspace for the Aplomado Falcon model
+HierarchicalReproductionModelCode.txt - used to estimate Aplomado Falcon nest occupancy and nestling survival using JAGS.
+
+Detailed model descriptions and formulas are described in the manuscript. Raw data are in ScholarWorks repository: (doi)
 
 Please email davidromanbontrager@gmail.com if you have additional questions.
