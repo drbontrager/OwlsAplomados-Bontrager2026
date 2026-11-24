@@ -11,7 +11,9 @@ OwlData Folder: contains data/workspaces for the owl occupancy models
 BarnOwlOccupancyModelCode.txt - used to estimate Barn Owl occupancy using NIMBLE.
 GreatHornedOwlOccupancyModelCode.txt - used to estimate Great Horned Owl occupancy using NIMBLE.
 
-AplomadoData Folder: contains AplomadoData.RData workspace for the Aplomado Falcon model
+AplomadoData Folder: contains data/workspace for the Aplomado Falcon model
+-AplomadoData.RData - load workspace to run the model HierarchicalReproductionModelCode.txt
+
 HierarchicalReproductionModelCode.txt - used to estimate Aplomado Falcon nest occupancy and nestling survival using JAGS.
 
 Detailed model descriptions and formulas are described in the manuscript. Raw data are in ScholarWorks repository: (doi)
