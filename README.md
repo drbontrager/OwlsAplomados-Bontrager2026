@@ -1,4 +1,4 @@
-# OwlsAplomados-Bontrager2026
+# OwlsAplomados-Bontrager_etal2027
 
 This repository contains the code and data for the analysis in Bontrager, D.R., McCabe, J.D., Juergens, P.W., Mutch, B.D., Isaak, C., Caughlin, T.T., & Cruz, J. (2027). Assessing impacts of two generalist owl species on endangered Aplomado Falcons in encroached grasslands. Ecology and Evolution. doi: TBD.
 
