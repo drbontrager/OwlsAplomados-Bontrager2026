@@ -5,8 +5,9 @@ This repository contains the code and data for the analysis in Bontrager, D.R., 
 Files are as follows:
 
 OwlData Folder: contains data/workspaces for the owl occupancy models
-              - BarnOwlData.RData - load workspace to run the model in BarnOwlOccupancyModelCode.txt
-              - GreatHornedOwlData.RData - load workspace to run the model in GreatHornedOwlOccupancyModelCode.txt
+- BarnOwlData.RData - load workspace to run the model in BarnOwlOccupancyModelCode.txt
+- GreatHornedOwlData.RData - load workspace to run the model in GreatHornedOwlOccupancyModelCode.txt
+
 BarnOwlOccupancyModelCode.txt - used to estimate Barn Owl occupancy using NIMBLE.
 GreatHornedOwlOccupancyModelCode.txt - used to estimate Great Horned Owl occupancy using NIMBLE.
 
